@@ -1,4 +1,4 @@
-/* 
+/*
  * basic, incomplete SSP160x (SSP1601?) interpreter
  *
  * Copyright (c) Gražvydas "notaz" Ignotas, 2008
@@ -83,6 +83,10 @@ typedef struct
 		unsigned int tmp0;		// 4a4
 		unsigned int tmp1;		// 4a8
 		unsigned int tmp2;		// 4ac
+#ifdef PSP
+		unsigned int mips_arm_flags; // 4b0
+		unsigned int mips_arm_result; // 4b4
+#endif
 	} drc;
 } ssp1601_t;
 

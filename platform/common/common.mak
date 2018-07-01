@@ -173,15 +173,13 @@ ifeq "$(use_cyclone)" "1"
 $(FR)pico/pico.c: $(FR)cpu/cyclone/Cyclone.h
 endif
 
-CYCLONE_CONFIG ?= cyclone_config.h
-
 $(FR)cpu/cyclone/Cyclone.h:
 	@echo "Cyclone submodule is missing, please run 'git submodule update --init'"
 	@false
 
-$(FR)cpu/cyclone/Cyclone.s: $(FR)cpu/$(CYCLONE_CONFIG)
+$(FR)cpu/cyclone/Cyclone.s: $(FR)cpu/cyclone_config.h
 	@echo building Cyclone...
-	@make -C $(R)cpu/cyclone/ CONFIG_FILE=../$(CYCLONE_CONFIG)
+	@make -C $(R)cpu/cyclone/ CONFIG_FILE=../cyclone_config.h
 
 $(FR)cpu/cyclone/Cyclone.s: $(FR)cpu/cyclone/*.cpp $(FR)cpu/cyclone/*.h
 

@@ -14,11 +14,13 @@
 extern const unsigned char  hcounts_32[];
 extern const unsigned char  hcounts_40[];
 
+#ifndef PSP
 #ifndef UTYPES_DEFINED
 typedef unsigned char  u8;
 typedef unsigned short u16;
 typedef unsigned int   u32;
 #define UTYPES_DEFINED
+#endif
 #endif
 
 int (*PicoDmaHook)(unsigned int source, int len, unsigned short **base, unsigned int *mask) = NULL;
@@ -100,7 +102,7 @@ static void DmaSlow(int len, unsigned int source)
     Pico.video.type, source, a, len, inc, (Pico.video.status&8)||!(Pico.video.reg[1]&0x40),
     SekCyclesDone(), SekPc);
 
-  Pico.m.dma_xfers = len;
+  Pico.m.dma_xfers += len;
   if (Pico.m.dma_xfers < len) // lame 16bit var
     Pico.m.dma_xfers = ~0;
   SekCyclesBurnRun(CheckDMA());
@@ -109,7 +111,7 @@ static void DmaSlow(int len, unsigned int source)
     base = (u16 *)PicoMem.ram;
     mask = 0xffff;
   }
-  else if (PicoIn.AHW & PAHW_MCD)
+  else if (PicoAHW & PAHW_MCD)
   {
     u8 r3 = Pico_mcd->s68k_regs[3];
     elprintf(EL_VDPDMA, "DmaSlow CD, r3=%02x", r3);
@@ -225,10 +227,10 @@ static void DmaCopy(int len)
   int source;
   elprintf(EL_VDPDMA, "DmaCopy len %i [%u]", len, SekCyclesDone());
 
-  Pico.m.dma_xfers = len;
+  Pico.m.dma_xfers += len;
   if (Pico.m.dma_xfers < len)
     Pico.m.dma_xfers = ~0;
-  Pico.video.status |= SR_DMA;
+  Pico.video.status |= 2; // dma busy
 
   source =Pico.video.reg[0x15];
   source|=Pico.video.reg[0x16]<<8;
@@ -256,10 +258,10 @@ static NOINLINE void DmaFill(int data)
   len = GetDmaLength();
   elprintf(EL_VDPDMA, "DmaFill len %i inc %i [%u]", len, inc, SekCyclesDone());
 
-  Pico.m.dma_xfers = len;
+  Pico.m.dma_xfers += len;
   if (Pico.m.dma_xfers < len) // lame 16bit var
     Pico.m.dma_xfers = ~0;
-  Pico.video.status |= SR_DMA;
+  Pico.video.status |= 2; // dma busy
 
   switch (Pico.video.type)
   {
@@ -306,10 +308,6 @@ static NOINLINE void CommandDma(void)
 
   if ((pvid->reg[1]&0x10)==0) return; // DMA not enabled
 
-  if (Pico.m.dma_xfers)
-    elprintf(EL_VDPDMA, "Dma overlap, left=%d @ %06x",
-             Pico.m.dma_xfers, SekPc);
-
   len = GetDmaLength();
   source =Pico.video.reg[0x15];
   source|=Pico.video.reg[0x16] << 8;
@@ -350,8 +348,8 @@ static NOINLINE void CommandChange(void)
 
 static void DrawSync(int blank_on)
 {
-  if (Pico.m.scanline < 224 && !(PicoIn.opt & POPT_ALT_RENDERER) &&
-      !PicoIn.skipFrame && Pico.est.DrawScanline <= Pico.m.scanline) {
+  if (Pico.m.scanline < 224 && !(PicoOpt & POPT_ALT_RENDERER) &&
+      !PicoSkipFrame && Pico.est.DrawScanline <= Pico.m.scanline) {
     //elprintf(EL_ANOMALY, "sync");
     PicoDrawSync(Pico.m.scanline, blank_on);
   }
@@ -380,7 +378,7 @@ PICO_INTERNAL_ASM void PicoVideoWrite(unsigned int a,unsigned short d)
       pvid->pending=0;
     }
 
-    if (!(pvid->status & SR_VB) && !(PicoIn.opt&POPT_DIS_VDP_FIFO))
+    if (!(pvid->status & SR_VB) && !(PicoOpt&POPT_DIS_VDP_FIFO))
     {
       int use = pvid->type == 1 ? 2 : 1;
       pvid->lwrite_cnt -= use;

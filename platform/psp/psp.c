@@ -18,24 +18,51 @@
 #include <psprtc.h>
 #include <pspgu.h>
 #include <pspsdk.h>
+#include <psputils.h>
 
 #include "psp.h"
 #include "emu.h"
-#include "../common/lprintf.h"
-#include "version.h"
+#include "../common/emu.h"
+#include "../common/menu_pico.h"
+#include "../common/version.h"
+
+#include <sys/dirent.h>
+#include <sys/select.h>
+#include <sys/types.h>
+#include "../libpicofe_/plat.h"
 
 extern int pico_main(void);
 
+#ifdef GPROF
+#include <pspprof.h>
+#endif
+
+#ifdef GCOV
+#include <stdio.h>
+#include <stdlib.h>
+
+void dummy(void)
+{
+	engineState = atoi(rom_fname_reload);
+	setbuf(NULL, NULL);
+	getenv(NULL);
+}
+#endif
+
 #ifndef FW15
 
-PSP_MODULE_INFO("PicoDrive", 0, 1, 51);
+#if 0
+PSP_MODULE_INFO("PicoDrive", 0, 1, 92);
 PSP_HEAP_SIZE_MAX();
 
 int main() { return pico_main(); }	/* just a wrapper */
 
+int psp_unhandled_suspend = 0;
+#endif
+
 #else
 
-PSP_MODULE_INFO("PicoDrive", 0x1000, 1, 51);
+PSP_MODULE_INFO("PicoDrive", 0x1000, 1, 92);
 PSP_MAIN_THREAD_ATTR(0);
 
 int main()
@@ -60,13 +87,13 @@ int main()
 
 #endif
 
-int psp_unhandled_suspend = 0;
-
 unsigned int __attribute__((aligned(16))) guCmdList[GU_CMDLIST_SIZE];
 
 void *psp_screen = VRAM_FB0;
 
-static int current_screen = 0; /* front bufer */
+static int current_screen = 0; /* front buffer */
+
+static unsigned short bg_buffer[512*272] __attribute__((aligned(16)));
 
 static SceUID main_thread_id = -1;
 
@@ -179,6 +206,15 @@ void psp_init(void)
 	/* input */
 	sceCtrlSetSamplingCycle(0);
 	sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
+
+	flip_after_sync = 1;
+
+	g_menuscreen_w = 512;
+	g_menuscreen_h = 272;
+
+	g_menubg_ptr = bg_buffer;
+	g_menuscreen_ptr = psp_screen;
+	g_screen_ptr = psp_screen;
 }
 
 void psp_finish(void)
@@ -197,6 +233,9 @@ void psp_video_flip(int wait_vsync)
 		wait_vsync ? PSP_DISPLAY_SETBUF_IMMEDIATE : PSP_DISPLAY_SETBUF_NEXTFRAME);
 	current_screen ^= 1;
 	psp_screen = current_screen ? VRAM_FB0 : VRAM_FB1;
+	g_menuscreen_ptr = psp_screen;
+	g_screen_ptr = psp_screen;
+	g_menubg_src_ptr = psp_screen;
 }
 
 void *psp_video_get_active_fb(void)
@@ -233,19 +272,6 @@ unsigned int psp_pad_read(int blocking)
 	if (pad.Ly > 128 + ANALOG_DEADZONE) buttons |= PBTN_NUB_DOWN;
 
 	return buttons;
-}
-
-int psp_get_cpu_clock(void)
-{
-	return scePowerGetCpuClockFrequencyInt();
-}
-
-int psp_set_cpu_clock(int clock)
-{
-	int ret = scePowerSetClockFrequency(clock, clock, clock/2);
-	if (ret != 0) lprintf("failed to set clock: %i\n", ret);
-
-	return ret;
 }
 
 char *psp_get_status_line(void)
@@ -370,5 +396,177 @@ void lprintf(const char *fmt, ...)
 	logfd = -1;
 #endif
 }
+
+int plat_target_init(void)
+{
+	return 0;
+}
+
+void plat_target_finish(void)
+{
+}
+
+void plat_target_setup_input(void)
+{
+}
+
+unsigned int plat_get_ticks_ms(void)
+{
+	struct timeval tv;
+	unsigned int ret;
+
+	gettimeofday(&tv, NULL);
+
+	ret = (unsigned)tv.tv_sec * 1000;
+	/* approximate /= 1000 */
+	ret += ((unsigned)tv.tv_usec * 4195) >> 22;
+
+	return ret;
+}
+
+unsigned int plat_get_ticks_us(void)
+{
+	struct timeval tv;
+	unsigned int ret;
+
+	gettimeofday(&tv, NULL);
+
+	ret = (unsigned)tv.tv_sec * 1000000;
+	ret += (unsigned)tv.tv_usec;
+
+	return ret;
+}
+
+int plat_is_dir(const char *path)
+{
+	DIR *dir;
+	if ((dir = opendir(path))) {
+		closedir(dir);
+		return 1;
+	}
+	return 0;
+}
+
+void plat_sleep_ms(int ms)
+{
+	sceKernelDelayThread(ms * 1000);
+}
+
+int plat_wait_event(int *fds_hnds, int count, int timeout_ms)
+{
+	struct timeval tv, *timeout = NULL;
+	int i, ret, fdmax = -1;
+	fd_set fdset;
+
+	if (timeout_ms >= 0) {
+		tv.tv_sec = timeout_ms / 1000;
+		tv.tv_usec = (timeout_ms % 1000) * 1000;
+		timeout = &tv;
+	}
+
+	FD_ZERO(&fdset);
+	for (i = 0; i < count; i++) {
+		if (fds_hnds[i] > fdmax) fdmax = fds_hnds[i];
+		FD_SET(fds_hnds[i], &fdset);
+	}
+
+	ret = select(fdmax + 1, &fdset, NULL, NULL, timeout);
+	if (ret == -1)
+	{
+		perror("plat_wait_event: select failed");
+		plat_sleep_ms(1);
+		return -1;
+	}
+
+	if (ret == 0)
+		return -1; /* timeout */
+
+	ret = -1;
+	for (i = 0; i < count; i++)
+		if (FD_ISSET(fds_hnds[i], &fdset))
+			ret = fds_hnds[i];
+
+	return ret;
+}
+
+int cpu_clock_get(void)
+{
+	return scePowerGetCpuClockFrequencyInt();
+}
+
+int cpu_clock_set(int clock)
+{
+	if ( clock < 19 )
+		clock = 19;
+
+	if ( clock > 333 )
+		clock = 333;
+
+	int ret = scePowerSetClockFrequency(clock, clock, clock/2);
+	if (ret != 0) lprintf("failed to set clock: %i\n", ret);
+
+	return ret;
+}
+
+int psp_get_cpu_clock(void)
+{
+	return scePowerGetCpuClockFrequencyInt();
+}
+
+int psp_set_cpu_clock(int clock)
+{
+	if ( clock < 19 )
+		clock = 19;
+
+	if ( clock > 333 )
+		clock = 333;
+
+	int ret = scePowerSetClockFrequency(clock, clock, clock/2);
+	if (ret != 0) lprintf("failed to set clock: %i\n", ret);
+
+	return ret;
+}
+
+static int bat_capacity_get(void)
+{
+	return scePowerGetBatteryLifePercent();
+}
+
+int gamma_set(int val, int black_level){
+	return 0;
+}
+
+struct plat_target plat_target = {
+	cpu_clock_get,
+	cpu_clock_set,
+	bat_capacity_get,
+	gamma_set,
+};
+
+void plat_early_init(void)
+{
+	lprintf("\nPicoDrive v" VERSION " " __DATE__ " " __TIME__ "\n");
+}
+
+void plat_finish(void)
+{
+#ifdef GPROF
+	gprof_cleanup();
+#endif
+#ifndef GCOV
+	mp3_deinit();
+	psp_finish();
+#endif
+}
+
+#ifdef _SVP_DRC
+void cache_flush_d_inval_i(void *start_addr, void *end_addr)
+{
+	int size = end_addr - start_addr;
+
+	sceKernelDcacheWritebackInvalidateRange(start_addr, size);
+	invalidate_icache_region(start_addr - 0x0, size + 0x00);
+}
+#endif
 
 

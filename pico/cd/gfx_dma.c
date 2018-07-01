@@ -10,8 +10,10 @@
 
 #include "cell_map.c"
 
+#ifndef PSP
 #ifndef UTYPES_DEFINED
 typedef unsigned short u16;
+#endif
 #endif
 
 // check: Heart of the alien, jaguar xj 220

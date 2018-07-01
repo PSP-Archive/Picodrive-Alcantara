@@ -1,5 +1,6 @@
-
+#if 0
 extern int engineStateSuspend;
+#endif
 
 void emu_HandleResume(void);
 

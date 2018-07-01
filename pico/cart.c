@@ -391,8 +391,8 @@ int pm_seek(pm_file *stream, long offset, int whence)
       offset = pos;
     }
 
-    if (PicoIn.osdMessage != NULL && offset > 4 * 1024 * 1024)
-      PicoIn.osdMessage("Decompressing data...");
+    if (PicoMessage != NULL && offset > 4 * 1024 * 1024)
+      PicoMessage("Decompressing data...");
 
     while (offset > 0) {
       char buf[16 * 1024];
@@ -523,9 +523,19 @@ static unsigned char *PicoCartAlloc(int filesize, int is_sms)
   if (rom_alloc_size - filesize < 4)
     rom_alloc_size += 4; // padding for out-of-bound exec protection
 
+#ifndef PSP
   // Allocate space for the rom plus padding
   // use special address for 32x dynarec
   rom = plat_mmap(0x02000000, rom_alloc_size, 0, 0);
+#else
+
+  if( rom_alloc_size < 0x7ffff ) rom_alloc_size = 0x7ffff;
+
+  // Allocate space for the rom plus padding
+  rom=(unsigned char *)malloc(rom_alloc_size);
+  if(rom) memset(rom+rom_alloc_size-0x80000,0,0x80000);
+#endif
+
   return rom;
 }
 
@@ -569,16 +579,20 @@ int PicoCartLoad(pm_file *f,unsigned char **prom,unsigned int *psize,int is_sms)
     bytes_read = pm_read(rom,size,f); // Load up the rom
   if (bytes_read <= 0) {
     elprintf(EL_STATUS, "read failed");
+#ifndef PSP
     plat_munmap(rom, rom_alloc_size);
+#else
+    free(rom);
+#endif
     return 3;
   }
 
   if (!is_sms)
   {
     // maybe we are loading MegaCD BIOS?
-    if (!(PicoIn.AHW & PAHW_MCD) && size == 0x20000 && (!strncmp((char *)rom+0x124, "BOOT", 4) ||
+    if (!(PicoAHW & PAHW_MCD) && size == 0x20000 && (!strncmp((char *)rom+0x124, "BOOT", 4) ||
          !strncmp((char *)rom+0x128, "BOOT", 4))) {
-      PicoIn.AHW |= PAHW_MCD;
+      PicoAHW |= PAHW_MCD;
     }
 
     // Check for SMD:
@@ -628,7 +642,7 @@ int PicoCartInsert(unsigned char *rom, unsigned int romsize, const char *carthw_
   }
   pdb_cleanup();
 
-  PicoIn.AHW &= PAHW_MCD|PAHW_SMS;
+  PicoAHW &= PAHW_MCD|PAHW_SMS;
 
   PicoCartMemSetup = NULL;
   PicoDmaHook = NULL;
@@ -637,13 +651,13 @@ int PicoCartInsert(unsigned char *rom, unsigned int romsize, const char *carthw_
   PicoLoadStateHook = NULL;
   carthw_chunks = NULL;
 
-  if (!(PicoIn.AHW & (PAHW_MCD|PAHW_SMS)))
+  if (!(PicoAHW & (PAHW_MCD|PAHW_SMS)))
     PicoCartDetect(carthw_cfg);
 
   // setup correct memory map for loaded ROM
-  switch (PicoIn.AHW) {
+  switch (PicoAHW) {
     default:
-      elprintf(EL_STATUS|EL_ANOMALY, "starting in unknown hw configuration: %x", PicoIn.AHW);
+      elprintf(EL_STATUS|EL_ANOMALY, "starting in unknown hw configuration: %x", PicoAHW);
     case 0:
     case PAHW_SVP:  PicoMemSetup(); break;
     case PAHW_MCD:  PicoMemSetupCD(); break;
@@ -654,7 +668,7 @@ int PicoCartInsert(unsigned char *rom, unsigned int romsize, const char *carthw_
   if (PicoCartMemSetup != NULL)
     PicoCartMemSetup();
 
-  if (PicoIn.AHW & PAHW_SMS)
+  if (PicoAHW & PAHW_SMS)
     PicoPowerMS();
   else
     PicoPower();
@@ -665,7 +679,12 @@ int PicoCartInsert(unsigned char *rom, unsigned int romsize, const char *carthw_
 
 int PicoCartResize(int newsize)
 {
-  void *tmp = plat_mremap(Pico.rom, rom_alloc_size, newsize);
+#ifndef PSP
+	void *tmp = plat_mremap(Pico.rom, rom_alloc_size, newsize);
+#else
+	void *tmp = realloc(Pico.rom, newsize);
+#endif
+
   if (tmp == NULL)
     return -1;
 
@@ -681,12 +700,16 @@ void PicoCartUnload(void)
     PicoCartUnloadHook = NULL;
   }
 
-  if (PicoIn.AHW & PAHW_32X)
+  if (PicoAHW & PAHW_32X)
     PicoUnload32x();
 
   if (Pico.rom != NULL) {
     SekFinishIdleDet();
+#ifndef PSP
     plat_munmap(Pico.rom, rom_alloc_size);
+#else
+    free(Pico.rom);
+#endif
     Pico.rom = NULL;
   }
   PicoGameLoaded = 0;
@@ -778,8 +801,7 @@ static int is_expr(const char *expr, char **pr)
 
 #include "carthw_cfg.c"
 
-static void parse_carthw(const char *carthw_cfg, int *fill_sram,
-  int *hw_detected)
+static void parse_carthw(const char *carthw_cfg, int *fill_sram)
 {
   int line = 0, any_checks_passed = 0, skip_sect = 0;
   const char *s, *builtin = builtin_carthw_cfg;
@@ -903,7 +925,6 @@ static void parse_carthw(const char *carthw_cfg, int *fill_sram,
     if (is_expr("hw", &p)) {
       if (!any_checks_passed)
         goto no_checks;
-      *hw_detected = 1;
       rstrip(p);
 
       if      (strcmp(p, "svp") == 0)
@@ -927,7 +948,6 @@ static void parse_carthw(const char *carthw_cfg, int *fill_sram,
       else {
         elprintf(EL_STATUS, "carthw:%d: unsupported mapper: %s", line, p);
         skip_sect = 1;
-        *hw_detected = 0;
       }
       continue;
     }
@@ -968,7 +988,7 @@ static void parse_carthw(const char *carthw_cfg, int *fill_sram,
       else if (strcmp(p, "filled_sram") == 0)
         *fill_sram = 1;
       else if (strcmp(p, "force_6btn") == 0)
-        PicoIn.quirks |= PQUIRK_FORCE_6BTN;
+        PicoQuirks |= PQUIRK_FORCE_6BTN;
       else {
         elprintf(EL_STATUS, "carthw:%d: unsupported prop: %s", line, p);
         goto bad_nomsg;
@@ -1041,7 +1061,6 @@ no_checks:
  */
 static void PicoCartDetect(const char *carthw_cfg)
 {
-  int carthw_detected = 0;
   int fill_sram = 0;
 
   memset(&Pico.sv, 0, sizeof(Pico.sv));
@@ -1071,11 +1090,7 @@ static void PicoCartDetect(const char *carthw_cfg)
   Pico.sv.eeprom_bit_out= 0;
 
   if (carthw_cfg != NULL)
-    parse_carthw(carthw_cfg, &fill_sram, &carthw_detected);
-
-  // assume the standard mapper for large roms
-  if (!carthw_detected && Pico.romsize > 0x400000)
-    carthw_ssf2_startup();
+    parse_carthw(carthw_cfg, &fill_sram);
 
   if (Pico.sv.flags & SRF_ENABLED)
   {

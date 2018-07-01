@@ -1,4 +1,4 @@
-/* 
+/*
  * basic, incomplete SSP160x (SSP1601?) interpreter
  * with SVP memory controller emu
  *

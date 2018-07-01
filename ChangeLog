@@ -1,3 +1,46 @@
+1.91.16 (2017-11-02) (PSP)
+  * Fix some bugs in SMS games (e.g.: Star Wars collision dections fails)
+
+1.91.16 (2017-10-15) (PSP)
+  * Fix and reuse of the assembly memory manager (the best in speed and compatibility)
+  * Changes in the lower limits of the screen ratio
+
+1.91 (2017-09-28) (PSP)
+  - Revert to C code for memory handler (SRam don't work with asm MIPS version)
+
+1.91 (2017-08-26) (PSP)
+  * Fixed bug in clock time
+  * Better support for suspension and wakeup (still having problems for sega cd games)
+  + This file included in pack
+
+1.91 (2017-08-12) (PSP)
+  * Re-added gamma and black level adjust festures
+
+1.91 (2017-05-22) (PSP)
+  * Fix some freezes for SVP dynarec (-2FPS)
+
+1.91 (2016-12-23) (PSP)
+  + Less instructions for SVP dynarec (+5FPS) 
+  - Revert to C code for Yamaha sound chip (best peformance)
+
+1.91 (2016-12-16) (PSP)
+  * Reverting to how to list the roms of version 1.51b
+  * Changed build from 'libretro' branch to 'master' branch
+
+1.91 (2016-12-13) (PSP)
+  + Asm code for Yamaha sound chip
+  + Option for Sega CD CPUs sync (speed-up for some games)
+
+1.91 (2016-12-07) (PSP)
+  * Bug fixes in interface, renderer, Sega CD audio and PSP SVP dynarec
+  + SVP dynarec for PSP (mirror tracks don't work)
+  + Option to keep sound while slowdown  
+  + More screen size options (PSP)
+  * Re-added vsync options
+  + SVP cycles option
+  + More asm code for PSP version (renderer and memory)
+  + Revived PSP support (Robson Santana).
+
 1.91 (2013-10-12)
   + Added OpenDingux support (Paul Cercueil).
   * Save directory changed to ~/.picodrive/ for generic platform build

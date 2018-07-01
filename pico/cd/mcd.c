@@ -15,6 +15,9 @@ static unsigned int mcd_m68k_cycle_mult;
 static unsigned int mcd_m68k_cycle_base;
 static unsigned int mcd_s68k_cycle_base;
 
+void (*PicoMCDopenTray)(void) = NULL;
+void (*PicoMCDcloseTray)(void) = NULL;
+
 
 PICO_INTERNAL void PicoInitMCD(void)
 {
@@ -27,11 +30,9 @@ PICO_INTERNAL void PicoExitMCD(void)
 
 PICO_INTERNAL void PicoPowerMCD(void)
 {
-  int fmt_size;
-
   SekCycleCntS68k = SekCycleAimS68k = 0;
 
-  fmt_size = sizeof(formatted_bram);
+  int fmt_size = sizeof(formatted_bram);
   memset(Pico_mcd->prg_ram,    0, sizeof(Pico_mcd->prg_ram));
   memset(Pico_mcd->word_ram2M, 0, sizeof(Pico_mcd->word_ram2M));
   memset(Pico_mcd->pcm_ram,    0, sizeof(Pico_mcd->pcm_ram));
@@ -76,7 +77,7 @@ PICO_INTERNAL int PicoResetMCD(void)
   // reset button doesn't affect MCD hardware
 
   // use Pico.sv.data for RAM cart
-  if (PicoIn.opt & POPT_EN_MCD_RAMCART) {
+  if (PicoOpt & POPT_EN_MCD_RAMCART) {
     if (Pico.sv.data == NULL)
       Pico.sv.data = calloc(1, 0x12000);
   }
@@ -104,7 +105,7 @@ static void SekRunM68kOnce(void)
 #elif defined(EMU_M68K)
     Pico.t.m68c_cnt += m68k_execute(cyc_do) - cyc_do;
 #elif defined(EMU_F68K)
-    Pico.t.m68c_cnt += fm68k_emulate(&PicoCpuFM68k, cyc_do, 0) - cyc_do;
+    Pico.t.m68c_cnt += fm68k_emulate(cyc_do, 0) - cyc_do;
 #endif
   }
 
@@ -135,7 +136,9 @@ static void SekRunS68k(unsigned int to)
   SekCycleCntS68k += m68k_execute(cyc_do) - cyc_do;
   m68k_set_context(&PicoCpuMM68k);
 #elif defined(EMU_F68K)
-  SekCycleCntS68k += fm68k_emulate(&PicoCpuFS68k, cyc_do, 0) - cyc_do;
+  g_m68kcontext = &PicoCpuFS68k;
+  SekCycleCntS68k += fm68k_emulate(cyc_do, 0) - cyc_do;
+  g_m68kcontext = &PicoCpuFM68k;
 #endif
 }
 
@@ -197,10 +200,10 @@ typedef void (event_cb)(unsigned int now);
 unsigned int pcd_event_times[PCD_EVENT_COUNT];
 static unsigned int event_time_next;
 static event_cb *pcd_event_cbs[PCD_EVENT_COUNT] = {
-  pcd_cdc_event,            // PCD_EVENT_CDC
-  pcd_int3_timer_event,     // PCD_EVENT_TIMER3
-  gfx_update,               // PCD_EVENT_GFX
-  pcd_dma_event,            // PCD_EVENT_DMA
+  [PCD_EVENT_CDC]      = pcd_cdc_event,
+  [PCD_EVENT_TIMER3]   = pcd_int3_timer_event,
+  [PCD_EVENT_GFX]      = gfx_update,
+  [PCD_EVENT_DMA]      = pcd_dma_event,
 };
 
 void pcd_event_schedule(unsigned int now, enum pcd_event event, int after)

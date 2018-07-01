@@ -201,7 +201,7 @@ void PDebugShowPalette(unsigned short *screen, int stride)
   int x, y;
 
   Pico.m.dirtyPal = 1;
-  if (PicoIn.AHW & PAHW_SMS)
+  if (PicoAHW & PAHW_SMS)
     PicoDoHighPal555M4();
   else
     PicoDoHighPal555(1, 0, est);
@@ -328,7 +328,7 @@ void PDebugDumpMem(void)
   dump_ram_noswab(PicoMem.zram, "dumps/zram.bin");
   dump_ram(PicoMem.cram, "dumps/cram.bin");
 
-  if (PicoIn.AHW & PAHW_SMS)
+  if (PicoAHW & PAHW_SMS)
   {
     dump_ram_noswab(PicoMem.vramb, "dumps/vram.bin");
   }
@@ -339,7 +339,7 @@ void PDebugDumpMem(void)
     dump_ram(PicoMem.vsram,"dumps/vsram.bin");
   }
 
-  if (PicoIn.AHW & PAHW_MCD)
+  if (PicoAHW & PAHW_MCD)
   {
     dump_ram(Pico_mcd->prg_ram, "dumps/prg_ram.bin");
     if (Pico_mcd->s68k_regs[3]&4) // 1M mode?
@@ -355,7 +355,7 @@ void PDebugDumpMem(void)
   }
 
 #ifndef NO_32X
-  if (PicoIn.AHW & PAHW_32X)
+  if (PicoAHW & PAHW_32X)
   {
     dump_ram(Pico32xMem->sdram, "dumps/sdram.bin");
     dump_ram(Pico32xMem->dram[0], "dumps/dram0.bin");
@@ -371,7 +371,7 @@ void PDebugZ80Frame(void)
 {
   int lines, line_sample;
 
-  if (PicoIn.AHW & PAHW_SMS)
+  if (PicoAHW & PAHW_SMS)
     return;
 
   if (Pico.m.pal) {
@@ -385,24 +385,24 @@ void PDebugZ80Frame(void)
   z80_resetCycles();
   PsndStartFrame();
 
-  if (/*Pico.m.z80Run &&*/ !Pico.m.z80_reset && (PicoIn.opt&POPT_EN_Z80))
+  if (/*Pico.m.z80Run &&*/ !Pico.m.z80_reset && (PicoOpt&POPT_EN_Z80))
     PicoSyncZ80(Pico.t.m68c_cnt + line_sample * 488);
-  if (PicoIn.sndOut)
+  if (PsndOut)
     PsndGetSamples(line_sample);
 
-  if (/*Pico.m.z80Run &&*/ !Pico.m.z80_reset && (PicoIn.opt&POPT_EN_Z80)) {
+  if (/*Pico.m.z80Run &&*/ !Pico.m.z80_reset && (PicoOpt&POPT_EN_Z80)) {
     PicoSyncZ80(Pico.t.m68c_cnt + 224 * 488);
     z80_int();
   }
-  if (PicoIn.sndOut)
+  if (PsndOut)
     PsndGetSamples(224);
 
   // sync z80
-  if (/*Pico.m.z80Run &&*/ !Pico.m.z80_reset && (PicoIn.opt&POPT_EN_Z80)) {
+  if (/*Pico.m.z80Run &&*/ !Pico.m.z80_reset && (PicoOpt&POPT_EN_Z80)) {
     Pico.t.m68c_cnt += Pico.m.pal ? 151809 : 127671; // cycles adjusted for converter
     PicoSyncZ80(Pico.t.m68c_cnt);
   }
-  if (PicoIn.sndOut && ym2612.dacen && Pico.snd.dac_line < lines)
+  if (PsndOut && ym2612.dacen && PsndDacLine < lines)
     PsndDoDAC(lines - 1);
   PsndDoPSG(lines - 1);
 
@@ -412,7 +412,7 @@ void PDebugZ80Frame(void)
 
 void PDebugCPUStep(void)
 {
-  if (PicoIn.AHW & PAHW_SMS)
+  if (PicoAHW & PAHW_SMS)
     z80_run_nr(1);
   else
     SekStepM68k();

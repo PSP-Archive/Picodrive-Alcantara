@@ -1,8 +1,15 @@
 #ifndef __SH2_H__
 #define __SH2_H__
 
-#include "../../pico/pico_port.h"
+#if !defined(REGPARM) && defined(__i386__) 
+#define REGPARM(x) __attribute__((regparm(x)))
+#else
+#define REGPARM(x)
+#endif
 
+#ifdef PSP
+#include <psptypes.h>
+#endif
 // registers - matches structure order
 typedef enum {
   SHR_R0 = 0, SHR_SP = 15,
@@ -88,7 +95,7 @@ void sh2_unpack(SH2 *sh2, const unsigned char *buff);
 int  sh2_execute_drc(SH2 *sh2c, int cycles);
 int  sh2_execute_interpreter(SH2 *sh2c, int cycles);
 
-static __inline int sh2_execute(SH2 *sh2, int cycles, int use_drc)
+static inline int sh2_execute(SH2 *sh2, int cycles, int use_drc)
 {
   int ret;
 
@@ -108,17 +115,17 @@ static __inline int sh2_execute(SH2 *sh2, int cycles, int use_drc)
 
 // pico memhandlers
 // XXX: move somewhere else
-unsigned int REGPARM(2) p32x_sh2_read8(unsigned int a, SH2 *sh2);
-unsigned int REGPARM(2) p32x_sh2_read16(unsigned int a, SH2 *sh2);
-unsigned int REGPARM(2) p32x_sh2_read32(unsigned int a, SH2 *sh2);
-void REGPARM(3) p32x_sh2_write8 (unsigned int a, unsigned int d, SH2 *sh2);
-void REGPARM(3) p32x_sh2_write16(unsigned int a, unsigned int d, SH2 *sh2);
-void REGPARM(3) p32x_sh2_write32(unsigned int a, unsigned int d, SH2 *sh2);
+u32 REGPARM(2) p32x_sh2_read8(u32 a, SH2 *sh2);
+u32 REGPARM(2) p32x_sh2_read16(u32 a, SH2 *sh2);
+u32 REGPARM(2) p32x_sh2_read32(u32 a, SH2 *sh2);
+void REGPARM(3) p32x_sh2_write8 (u32 a, u32 d, SH2 *sh2);
+void REGPARM(3) p32x_sh2_write16(u32 a, u32 d, SH2 *sh2);
+void REGPARM(3) p32x_sh2_write32(u32 a, u32 d, SH2 *sh2);
 
 // debug
 #ifdef DRC_CMP
 void do_sh2_trace(SH2 *current, int cycles);
-void REGPARM(1) do_sh2_cmp(SH2 *current);
+void do_sh2_cmp(SH2 *current);
 #endif
 
 #endif /* __SH2_H__ */

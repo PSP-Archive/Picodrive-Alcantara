@@ -9,10 +9,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef PSP
 #include <strings.h>
+#endif
 
-#include "../libpicofe/input.h"
-#include "../libpicofe/plat.h"
+#include "../libpicofe_/input.h"
+#include "../libpicofe_/plat.h"
 #include "menu_pico.h"
 #include "emu.h"
 #include "version.h"
@@ -71,6 +73,13 @@ void parse_cmd_line(int argc, char *argv[])
 	}
 }
 
+#ifdef PSP
+PSP_MODULE_INFO("PicoDrive", 0, 1, 91);
+//PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
+PSP_HEAP_SIZE_MAX();
+
+int psp_unhandled_suspend = 0;
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -111,7 +120,13 @@ int main(int argc, char *argv[])
 		switch (engineState)
 		{
 			case PGS_Menu:
+#ifndef GPROF
 				menu_loop();
+#else
+				//strcpy(rom_fname_reload, rom_fname_loaded);
+				rom_fname_reload = rom_fname_loaded;
+				engineState = PGS_ReloadRom;
+#endif
 				break;
 
 			case PGS_TrayMenu:
@@ -127,12 +142,28 @@ int main(int argc, char *argv[])
 				}
 				break;
 
+#ifdef PSP
+			case PGS_Suspending:
+				while (engineState == PGS_Suspending)
+					plat_wait_suspend();
+				break;
+
+			case PGS_SuspendWake:
+				psp_unhandled_suspend = 0;
+				plat_resume_suspend();
+				engineState = engineStateSuspend;
+				break;
+#endif
+
 			case PGS_RestartRun:
 				engineState = PGS_Running;
 				/* vvv fallthrough */
 
 			case PGS_Running:
 				emu_loop();
+#ifdef GPROF
+				goto endloop;
+#endif
 				break;
 
 			case PGS_Quit:

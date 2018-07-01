@@ -1,16 +1,18 @@
 TARGET ?= PicoDrive
-DEBUG ?= 0
-CFLAGS += -Wall -g
+CFLAGS += -Wall -ggdb -falign-functions=2
 CFLAGS += -I.
-ifeq "$(DEBUG)" "0"
-CFLAGS += -O3 -DNDEBUG
+ifndef DEBUG
+CFLAGS += -O3 -DNDEBUG -ffunction-sections
+ifeq ($(findstring clang,$(CC)),)
+LDFLAGS += -Wl,--gc-sections
 endif
+endif
+#CFLAGS += -DEVT_LOG
+#CFLAGS += -DDRC_CMP
+#cpu_cmp = 1
+#drc_debug = 7
+#profile = 1
 
-# This is actually needed, bevieve me.
-# If you really have to disable this, set NO_ALIGN_FUNCTIONS elsewhere.
-ifndef NO_ALIGN_FUNCTIONS
-CFLAGS += -falign-functions=2
-endif
 
 all: config.mak target_
 
@@ -45,12 +47,14 @@ asm_mix ?= 1
 else # if not arm
 use_fame ?= 1
 use_cz80 ?= 1
-ifneq (,$(findstring 86,$(ARCH)))
-use_sh2drc ?= 1
-endif
 endif
 
 -include Makefile.local
+
+ifneq "$(use_cyclone)" "1"
+# due to CPU stop flag access
+asm_cdmemory = 0
+endif
 
 ifeq "$(PLATFORM)" "opendingux"
 opk: $(TARGET).opk
@@ -70,13 +74,7 @@ endif
 ifeq ("$(PLATFORM)",$(filter "$(PLATFORM)","rpi1" "rpi2"))
 CFLAGS += -DHAVE_GLES -DRASPBERRY
 CFLAGS += -I/opt/vc/include/ -I/opt/vc/include/interface/vcos/pthreads/ -I/opt/vc/include/interface/vmcs_host/linux/
-LDFLAGS += -ldl -lbcm_host -L/opt/vc/lib
-# Stupid renaming occured in latest raspbian...
-ifneq (,$(wildcard /opt/vc/lib/libbrcmGLESv2.so))
-LDFLAGS += -lbrcmEGL -lbrcmGLESv2
-else
-LDFLAGS += -lEGL -lGLESv2
-endif
+LDFLAGS += -ldl -lbcm_host -L/opt/vc/lib -lEGL -lGLESv2
 OBJS += platform/linux/emu.o platform/linux/blit.o # FIXME
 OBJS += platform/common/plat_sdl.o
 OBJS += platform/libpicofe/plat_sdl.o platform/libpicofe/in_sdl.o
@@ -121,7 +119,7 @@ USE_FRONTEND = 1
 PLATFORM_MP3 = 1
 endif
 ifeq "$(PLATFORM)" "libretro"
-OBJS += platform/libretro/libretro.o
+OBJS += platform/libretro.o 
 endif
 
 ifeq "$(USE_FRONTEND)" "1"
@@ -191,11 +189,7 @@ clean:
 	$(RM) -r .opk_data
 
 $(TARGET): $(OBJS)
-ifeq ($(STATIC_LINKING), 1)
-	$(AR) rcs $@ $^
-else
 	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS)
-endif
 
 pprof: platform/linux/pprof.c
 	$(CC) -O2 -ggdb -DPPROF -DPPROF_TOOL -I../../ -I. $^ -o $@
@@ -223,7 +217,7 @@ pico/cd/gfx_cd.o: CFLAGS += -fno-strict-aliasing
 # on x86, this is reduced by ~300MB when debug info is off (but not on ARM)
 # not using O3 and -fno-expensive-optimizations seems to also help, but you may
 # want to remove this stuff for better performance if your compiler can handle it
-ifeq "$(DEBUG)" "0"
+ifndef DEBUG
 cpu/fame/famec.o: CFLAGS += -g0 -O2 -fno-expensive-optimizations
 endif
 
@@ -231,11 +225,9 @@ pico/carthw_cfg.c: pico/carthw.cfg
 	tools/make_carthw_c $< $@
 
 # random deps
-pico/carthw/svp/compiler.o : cpu/drc/emit_arm.c
-cpu/sh2/compiler.o : cpu/drc/emit_arm.c
-cpu/sh2/compiler.o : cpu/drc/emit_x86.c
+pico/carthw/svp/compiler.o : cpu/drc/emit_$(ARCH).c
+cpu/sh2/compiler.o : cpu/drc/emit_$(ARCH).c
 cpu/sh2/mame/sh2pico.o : cpu/sh2/mame/sh2.c
 pico/pico.o pico/cd/mcd.o pico/32x/32x.o : pico/pico_cmn.c pico/pico_int.h
 pico/memory.o pico/cd/memory.o pico/32x/memory.o : pico/pico_int.h pico/memory.h
-# pico/cart.o : pico/carthw_cfg.c
 cpu/fame/famec.o: cpu/fame/famec.c cpu/fame/famec_opcodes.h

@@ -128,10 +128,15 @@ PICO_INTERNAL void SekInit(void)
   }
 #endif
 #ifdef EMU_F68K
-  memset(&PicoCpuFM68k, 0, sizeof(PicoCpuFM68k));
-  fm68k_init();
-  PicoCpuFM68k.iack_handler = SekIntAckF68K;
-  PicoCpuFM68k.sr = 0x2704; // Z flag
+  {
+    void *oldcontext = g_m68kcontext;
+    g_m68kcontext = &PicoCpuFM68k;
+    memset(&PicoCpuFM68k, 0, sizeof(PicoCpuFM68k));
+    fm68k_init();
+    PicoCpuFM68k.iack_handler = SekIntAckF68K;
+    PicoCpuFM68k.sr = 0x2704; // Z flag
+    g_m68kcontext = oldcontext;
+  }
 #endif
 }
 
@@ -152,7 +157,10 @@ PICO_INTERNAL int SekReset(void)
   REG_USP = 0; // ?
 #endif
 #ifdef EMU_F68K
-  fm68k_reset(&PicoCpuFM68k);
+  {
+    g_m68kcontext = &PicoCpuFM68k;
+    fm68k_reset();
+  }
 #endif
 
   return 0;
@@ -170,7 +178,7 @@ void SekStepM68k(void)
 #elif defined(EMU_M68K)
   Pico.t.m68c_cnt += m68k_execute(1);
 #elif defined(EMU_F68K)
-  Pico.t.m68c_cnt += fm68k_emulate(&PicoCpuFM68k, 1, 0);
+  Pico.t.m68c_cnt += fm68k_emulate(1, 0);
 #endif
 }
 
@@ -312,7 +320,7 @@ void SekInitIdleDet(void)
   CycloneInitIdle();
 #endif
 #ifdef EMU_F68K
-  fm68k_idle_install();
+  fm68k_emulate(0, 1);
 #endif
 }
 
@@ -335,7 +343,7 @@ int SekIsIdleCode(unsigned short *dst, int bytes)
            (*dst & 0xc1ff) == 0x0038 || // move.x ($xxxx.w), dX
            (*dst & 0xf13f) == 0xb038)   // cmp.x ($xxxx.w), dX
         return 1;
-      if (PicoIn.AHW & (PAHW_MCD|PAHW_32X))
+      if (PicoAHW & (PAHW_MCD|PAHW_32X))
         break;
       // with no addons, there should be no need to wait
       // for byte change anywhere
@@ -362,7 +370,7 @@ int SekIsIdleCode(unsigned short *dst, int bytes)
         return 1;
       break;
     case 12:
-      if (PicoIn.AHW & (PAHW_MCD|PAHW_32X))
+      if (PicoAHW & (PAHW_MCD|PAHW_32X))
         break;
       if ( (*dst & 0xf1f8) == 0x3010 && // move.w (aX), dX
             (dst[1]&0xf100) == 0x0000 && // arithmetic
@@ -423,7 +431,7 @@ void SekFinishIdleDet(void)
   CycloneFinishIdle();
 #endif
 #ifdef EMU_F68K
-  fm68k_idle_remove();
+  fm68k_emulate(0, 2);
 #endif
   while (idledet_count > 0)
   {

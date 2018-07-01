@@ -26,34 +26,48 @@ static int screen_offset;
     pd[x] = pal|t; \
   }
 
-static void TileNormM4(int sx, unsigned int pack, int pal)
+static int TileNormM4(int sx, int addr, int pal)
 {
   unsigned char *pd = Pico.est.HighCol + sx;
-  unsigned int t;
+  unsigned int pack, t;
 
-  PLANAR_PIXEL(0, 0)
-  PLANAR_PIXEL(1, 1)
-  PLANAR_PIXEL(2, 2)
-  PLANAR_PIXEL(3, 3)
-  PLANAR_PIXEL(4, 4)
-  PLANAR_PIXEL(5, 5)
-  PLANAR_PIXEL(6, 6)
-  PLANAR_PIXEL(7, 7)
+  pack = *(unsigned int *)(PicoMem.vram + addr); /* Get 4 bitplanes / 8 pixels */
+  if (pack)
+  {
+    PLANAR_PIXEL(0, 0)
+    PLANAR_PIXEL(1, 1)
+    PLANAR_PIXEL(2, 2)
+    PLANAR_PIXEL(3, 3)
+    PLANAR_PIXEL(4, 4)
+    PLANAR_PIXEL(5, 5)
+    PLANAR_PIXEL(6, 6)
+    PLANAR_PIXEL(7, 7)
+    return 0;
+  }
+
+  return 1; /* Tile blank */
 }
 
-static void TileFlipM4(int sx, unsigned int pack, int pal)
+static int TileFlipM4(int sx,int addr,int pal)
 {
   unsigned char *pd = Pico.est.HighCol + sx;
-  unsigned int t;
+  unsigned int pack, t;
 
-  PLANAR_PIXEL(0, 7)
-  PLANAR_PIXEL(1, 6)
-  PLANAR_PIXEL(2, 5)
-  PLANAR_PIXEL(3, 4)
-  PLANAR_PIXEL(4, 3)
-  PLANAR_PIXEL(5, 2)
-  PLANAR_PIXEL(6, 1)
-  PLANAR_PIXEL(7, 0)
+  pack = *(unsigned int *)(PicoMem.vram + addr); /* Get 4 bitplanes / 8 pixels */
+  if (pack)
+  {
+    PLANAR_PIXEL(0, 7)
+    PLANAR_PIXEL(1, 6)
+    PLANAR_PIXEL(2, 5)
+    PLANAR_PIXEL(3, 4)
+    PLANAR_PIXEL(4, 3)
+    PLANAR_PIXEL(5, 2)
+    PLANAR_PIXEL(6, 1)
+    PLANAR_PIXEL(7, 0)
+    return 0;
+  }
+
+  return 1; /* Tile blank */
 }
 
 static void draw_sprites(int scanline)
@@ -61,7 +75,6 @@ static void draw_sprites(int scanline)
   struct PicoVideo *pv = &Pico.video;
   unsigned int sprites_addr[8];
   unsigned int sprites_x[8];
-  unsigned int pack;
   unsigned char *sat;
   int xoff = 8; // relative to HighCol, which is (screen - 8)
   int sprite_base, addr_mask;
@@ -102,10 +115,8 @@ static void draw_sprites(int scanline)
     pv->status |= SR_C;
 
   // now draw all sprites backwards
-  for (--s; s >= 0; s--) {
-    pack = *(unsigned int *)(PicoMem.vram + sprites_addr[s]);
-    TileNormM4(sprites_x[s], pack, 0x10);
-  }
+  for (--s; s >= 0; s--)
+    TileNormM4(sprites_x[s], sprites_addr[s], 0x10);
 }
 
 // tilex_ty_prio merged to reduce register pressure
@@ -117,8 +128,7 @@ static void draw_strip(const unsigned short *nametab, int dx, int cells, int til
   // Draw tiles across screen:
   for (; cells > 0; dx += 8, tilex_ty_prio++, cells--)
   {
-    unsigned int pack;
-    int code;
+    int code, zero;
 
     code = nametab[tilex_ty_prio & 0x1f];
     if (code == blank)
@@ -137,13 +147,11 @@ static void draw_strip(const unsigned short *nametab, int dx, int cells, int til
       pal = (code>>7) & 0x10;
     }
 
-    pack = *(unsigned int *)(PicoMem.vram + addr); /* Get 4 bitplanes / 8 pixels */
-    if (pack == 0) {
-      blank = code;
-      continue;
-    }
-    if (code & 0x0200) TileFlipM4(dx, pack, pal);
-    else               TileNormM4(dx, pack, pal);
+    if (code&0x0200) zero = TileFlipM4(dx, addr, pal);
+    else             zero = TileNormM4(dx, addr, pal);
+
+    if (zero)
+      blank = code; // We know this tile is blank now
   }
 }
 
@@ -284,10 +292,10 @@ static void FinalizeLine8bitM4(int line)
 {
   unsigned char *pd = Pico.est.DrawLineDest;
 
-  if (!(PicoIn.opt & POPT_DIS_32C_BORDER))
+  if (!(PicoOpt & POPT_DIS_32C_BORDER))
     pd += 32;
 
-  memcpy(pd, Pico.est.HighCol + 8, 256);
+  memcpy32((int *)pd, (int *)(Pico.est.HighCol+8), 256/4);
 }
 
 void PicoDrawSetOutputMode4(pdso_t which)
@@ -300,4 +308,3 @@ void PicoDrawSetOutputMode4(pdso_t which)
   }
 }
 
-// vim:shiftwidth=2:ts=2:expandtab

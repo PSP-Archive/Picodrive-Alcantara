@@ -21,82 +21,63 @@ static int have_bank(u32 base)
   return 1;
 }
 
-/* standard/ssf2 mapper */
-int carthw_ssf2_active;
-unsigned char carthw_ssf2_banks[8];
+/* The SSFII mapper */
+static unsigned char ssf2_banks[8];
 
 static carthw_state_chunk carthw_ssf2_state[] =
 {
-  { CHUNK_CARTHW, sizeof(carthw_ssf2_banks), &carthw_ssf2_banks },
-  { 0,            0,                         NULL }
+	{ CHUNK_CARTHW, sizeof(ssf2_banks), &ssf2_banks },
+	{ 0,            0,                  NULL }
 };
 
-void carthw_ssf2_write8(u32 a, u32 d)
+static void carthw_ssf2_write8(u32 a, u32 d)
 {
-  u32 target, base;
+	u32 target, base;
 
-  if ((a & ~0x0e) != 0xa130f1) {
-    PicoWrite8_io(a, d);
-    return;
-  }
+	if ((a & 0xfffff0) != 0xa130f0) {
+		PicoWrite8_io(a, d);
+		return;
+	}
 
-  a &= 0x0e;
-  if (a == 0)
-    return;
-  if (carthw_ssf2_banks[a >> 1] == d)
-    return;
+	a &= 0x0e;
+	if (a == 0)
+		return;
 
-  base = d << 19;
-  target = a << 18;
-  if (!have_bank(base))
-    return;
-  carthw_ssf2_banks[a >> 1] = d;
+	ssf2_banks[a >> 1] = d;
+	base = d << 19;
+	target = a << 18;
+	if (!have_bank(base))
+		return;
 
-  cpu68k_map_set(m68k_read8_map,  target, target + 0x80000 - 1, Pico.rom + base, 0);
-  cpu68k_map_set(m68k_read16_map, target, target + 0x80000 - 1, Pico.rom + base, 0);
-}
-
-void carthw_ssf2_write16(u32 a, u32 d)
-{
-  PicoWrite16_io(a, d);
-  if ((a & ~0x0f) == 0xa130f0)
-    carthw_ssf2_write8(a + 1, d);
+	cpu68k_map_set(m68k_read8_map,  target, target + 0x80000 - 1, Pico.rom + base, 0);
+	cpu68k_map_set(m68k_read16_map, target, target + 0x80000 - 1, Pico.rom + base, 0);
 }
 
 static void carthw_ssf2_mem_setup(void)
 {
-  cpu68k_map_set(m68k_write8_map,  0xa10000, 0xa1ffff, carthw_ssf2_write8, 1);
-  cpu68k_map_set(m68k_write16_map, 0xa10000, 0xa1ffff, carthw_ssf2_write16, 1);
+	cpu68k_map_set(m68k_write8_map, 0xa10000, 0xa1ffff, carthw_ssf2_write8, 1);
 }
 
 static void carthw_ssf2_statef(void)
 {
-  int i;
-  for (i = 1; i < 8; i++)
-    carthw_ssf2_write8(0xa130f0 | (i << 1), carthw_ssf2_banks[i]);
-}
-
-static void carthw_ssf2_unload(void)
-{
-  memset(carthw_ssf2_banks, 0, sizeof(carthw_ssf2_banks));
-  carthw_ssf2_active = 0;
+	int i;
+	for (i = 1; i < 8; i++)
+		carthw_ssf2_write8(0xa130f0 | (i << 1), ssf2_banks[i]);
 }
 
 void carthw_ssf2_startup(void)
 {
-  int i;
+	int i;
 
-  elprintf(EL_STATUS, "SSF2 mapper startup");
+	elprintf(EL_STATUS, "SSF2 mapper startup");
 
-  // default map
-  for (i = 0; i < 8; i++)
-    carthw_ssf2_banks[i] = i;
+	// default map
+	for (i = 0; i < 8; i++)
+		ssf2_banks[i] = i;
 
-  PicoCartMemSetup   = carthw_ssf2_mem_setup;
-  PicoLoadStateHook  = carthw_ssf2_statef;
-  PicoCartUnloadHook = carthw_ssf2_unload;
-  carthw_chunks      = carthw_ssf2_state;
-  carthw_ssf2_active = 1;
+	PicoCartMemSetup  = carthw_ssf2_mem_setup;
+	PicoLoadStateHook = carthw_ssf2_statef;
+	carthw_chunks     = carthw_ssf2_state;
 }
 
 
@@ -448,39 +429,7 @@ static void carthw_pier_reset(void)
 
 void carthw_pier_startup(void)
 {
-  void *eeprom_state;
-  int eeprom_size = 0;
-  int i;
-
-  elprintf(EL_STATUS, "Pier Solar mapper startup");
-
-  // mostly same as for realtec..
-  i = PicoCartResize(Pico.romsize + M68K_BANK_SIZE);
-  if (i != 0) {
-    elprintf(EL_STATUS, "OOM");
-    return;
-  }
-
-  pier_dump_prot = 3;
-
-  // create dump protection bank
-  for (i = 0; i < M68K_BANK_SIZE; i += 0x8000)
-    memcpy(Pico.rom + Pico.romsize + i, Pico.rom, 0x8000);
-
-  // save EEPROM
-  eeprom_state = eeprom_spi_init(&eeprom_size);
-  Pico.sv.flags = 0;
-  Pico.sv.size = 0x10000;
-  Pico.sv.data = calloc(1, Pico.sv.size);
-  if (!Pico.sv.data)
-    Pico.sv.size = 0;
-  carthw_pier_state[2].ptr = eeprom_state;
-  carthw_pier_state[2].size = eeprom_size;
-
-  PicoCartMemSetup  = carthw_pier_mem_setup;
-  PicoResetHook     = carthw_pier_reset;
-  PicoLoadStateHook = carthw_pier_statef;
-  carthw_chunks     = carthw_pier_state;
+	return;
 }
 
 /* Simple unlicensed ROM protection emulation */

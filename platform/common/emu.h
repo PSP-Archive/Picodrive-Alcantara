@@ -6,6 +6,9 @@
  * See COPYING file in the top-level directory.
  */
 
+#ifndef COMMON_EMU_H
+#define COMMON_EMU_H
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,7 +19,6 @@ extern void *g_screen_ptr;
 
 extern int g_screen_width;
 extern int g_screen_height;
-extern int g_screen_ppitch; // pitch in pixels
 
 #define EOPT_EN_SRAM      (1<<0)
 #define EOPT_SHOW_FPS     (1<<1)
@@ -34,6 +36,10 @@ extern int g_screen_ppitch; // pitch in pixels
 #define EOPT_NO_FRMLIMIT  (1<<18)
 #define EOPT_WIZ_TEAR_FIX (1<<19)
 #define EOPT_EXT_FRMLIMIT (1<<20) // no internal frame limiter (limited by snd, etc)
+#ifdef PSP
+#define EOPT_EN_KEEP_SOUND (1<<21)
+#define EOPT_EN_ANALOG    (1<<23)
+#endif
 
 enum {
 	EOPT_SCALE_NONE = 0,
@@ -66,7 +72,9 @@ typedef struct _currentConfig_t {
 	int vscaling;
 	int rotation; // for UIQ
 	float scale; // psp: screen scale
+	int scale_int;
 	float hscale32, hscale40; // psp: horizontal scale
+	int hscale32_int, hscale40_int;
 	int gamma2;  // psp: black level
 	int turbo_rate;
 	int renderer;
@@ -75,11 +83,18 @@ typedef struct _currentConfig_t {
 	int analog_deadzone;
 	int msh2_khz;
 	int ssh2_khz;
-	int overclock_68k;
+#ifdef PSP
+	int svp_khz;
+	char lastRomFile[512];
+	int KeyBinds[32];
+#endif
 } currentConfig_t;
 
 extern currentConfig_t currentConfig, defaultConfig;
 extern const char *PicoConfigFile;
+#ifdef PSP
+extern int rom_loaded;
+#endif
 extern int state_slot;
 extern int config_slot, config_slot_current;
 extern unsigned char *movie_data;
@@ -96,6 +111,9 @@ extern char rom_fname_loaded[512];		// currently loaded ROM filename
 
 // engine states
 extern int engineState;
+#ifdef PSP
+extern int engineStateSuspend;
+#endif
 enum TPicoGameState {
 	PGS_Paused = 1,
 	PGS_Running,
@@ -156,6 +174,7 @@ void pemu_validate_config(void);
 void pemu_loop_prep(void);
 void pemu_loop_end(void);
 void pemu_forced_frame(int no_scale, int do_emu); // ..to g_menubg_src_ptr
+void pemu_scan_prepare(void);
 void pemu_finalize_frame(const char *fps, const char *notice_msg);
 
 void pemu_sound_start(void);
@@ -178,3 +197,4 @@ void plat_update_volume(int has_changed, int is_up);
 } // extern "C"
 #endif
 
+#endif

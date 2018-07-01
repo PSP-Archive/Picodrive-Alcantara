@@ -23,6 +23,10 @@
 #define MENU_X2 0
 #endif
 
+#ifdef PSP
+#define	PATH_MAX		 1024	/* max bytes in pathname */
+#endif
+
 // FIXME
 #define REVISION "0"
 
@@ -55,7 +59,7 @@ static unsigned short fname2color(const char *fname)
 	return 0xffff;
 }
 
-#include "../libpicofe/menu.c"
+#include "../libpicofe_/menu.c"
 
 static const char *men_dummy[] = { NULL };
 
@@ -73,7 +77,6 @@ static void make_bg(int no_scale)
 {
 	unsigned short *src = (void *)g_menubg_src_ptr;
 	int w = g_screen_width, h = g_screen_height;
-	int pp = g_screen_ppitch;
 	short *dst;
 	int x, y;
 
@@ -88,7 +91,7 @@ static void make_bg(int no_scale)
 		d += (g_menuscreen_h / 2 - h * 2 / 2)
 			* g_menuscreen_w / 2;
 		d += (g_menuscreen_w / 2 - w * 2 / 2) / 2;
-		for (y = 0; y < h; y++, src += pp, d += g_menuscreen_w*2/2) {
+		for (y = 0; y < h; y++, src += w, d += g_menuscreen_w*2/2) {
 			for (x = 0; x < w; x++) {
 				t = src[x];
 				t = ((t & 0xf79e)>>1) - ((t & 0xc618)>>3);
@@ -108,7 +111,7 @@ static void make_bg(int no_scale)
 		(g_menuscreen_w / 2 - w / 2);
 
 	// darken the active framebuffer
-	for (; h > 0; dst += g_menuscreen_w, src += pp, h--)
+	for (; h > 0; dst += g_menuscreen_w, src += g_screen_width, h--)
 		menu_darken_bg(dst, src, w, 1);
 }
 
@@ -168,8 +171,8 @@ static void load_progress_cb(int percent)
 		len = g_menuscreen_w;
 
 	menu_draw_begin(0, 1);
-	dst = (unsigned short *)g_menuscreen_ptr + g_menuscreen_pp * me_sfont_h * 2;
-	for (ln = me_sfont_h - 2; ln > 0; ln--, dst += g_menuscreen_pp)
+	dst = (unsigned short *)g_menuscreen_ptr + g_menuscreen_w * me_sfont_h * 2;
+	for (ln = me_sfont_h - 2; ln > 0; ln--, dst += g_menuscreen_w)
 		memset(dst, 0xff, len * 2);
 	menu_draw_end();
 }
@@ -180,18 +183,17 @@ static void cdload_progress_cb(const char *fname, int percent)
 	unsigned short *dst;
 
 	menu_draw_begin(0, 1);
-	dst = (unsigned short *)g_menuscreen_ptr + g_menuscreen_pp * me_sfont_h * 2;
-
-	menuscreen_memset_lines(dst, 0xff, me_sfont_h - 2);
+	dst = (unsigned short *)g_menuscreen_ptr + g_menuscreen_w * me_sfont_h * 2;
+	memset(dst, 0xff, g_menuscreen_w * (me_sfont_h - 2) * 2);
 
 	smalltext_out16(1, 3 * me_sfont_h, "Processing CD image / MP3s", 0xffff);
 	smalltext_out16(1, 4 * me_sfont_h, fname, 0xffff);
-	dst += g_menuscreen_pp * me_sfont_h * 3;
+	dst += g_menuscreen_w * me_sfont_h * 3;
 
 	if (len > g_menuscreen_w)
 		len = g_menuscreen_w;
 
-	for (ln = (me_sfont_h - 2); ln > 0; ln--, dst += g_menuscreen_pp)
+	for (ln = (me_sfont_h - 2); ln > 0; ln--, dst += g_menuscreen_w)
 		memset(dst, 0xff, len * 2);
 	menu_draw_end();
 
@@ -283,7 +285,7 @@ static void menu_loop_patches(void)
 
 // -------------- key config --------------
 
-// PicoIn.pad[] format: MXYZ SACB RLDU
+// PicoPad[] format: MXYZ SACB RLDU
 me_bind_action me_ctrl_actions[] =
 {
 	{ "UP     ", 0x0001 },
@@ -371,6 +373,9 @@ static menu_entry e_menu_keyconfig[] =
 	mee_enum      ("Input device 1",    MA_OPT_INPUT_DEV0,  currentConfig.input_dev0, indev_names),
 	mee_enum      ("Input device 2",    MA_OPT_INPUT_DEV1,  currentConfig.input_dev1, indev_names),
 	mee_range     ("Turbo rate",        MA_CTRL_TURBO_RATE, currentConfig.turbo_rate, 1, 30),
+#ifdef PSP
+	mee_onoff     ("Enable analog",     MA_CTRL_ANALOG, 	currentConfig.EmuOpt, EOPT_EN_ANALOG),
+#endif
 	mee_range     ("Analog deadzone",   MA_CTRL_DEADZONE,   currentConfig.analog_deadzone, 1, 99),
 	mee_cust_nosave("Save global config",       MA_OPT_SAVECFG, mh_saveloadcfg, mgn_saveloadcfg),
 	mee_cust_nosave("Save cfg for loaded game", MA_OPT_SAVECFG_GAME, mh_saveloadcfg, mgn_saveloadcfg),
@@ -408,14 +413,17 @@ static const char h_srcart[] = "Emulate the save RAM cartridge accessory\n"
 				"most games don't need this";
 static const char h_scfx[]   = "Emulate scale/rotate ASIC chip for graphics effects\n"
 				"disable to improve performance";
+static const char h_bsync[]  = "More accurate mode for CPUs (needed for some games)\n"
+				"disable to improve performance";
 
 static menu_entry e_menu_cd_options[] =
 {
 	mee_onoff_h("CD LEDs",              MA_CDOPT_LEDS,          currentConfig.EmuOpt, EOPT_EN_CD_LEDS, h_cdleds),
-	mee_onoff_h("CDDA audio",           MA_CDOPT_CDDA,          PicoIn.opt, POPT_EN_MCD_CDDA, h_cdda),
-	mee_onoff_h("PCM audio",            MA_CDOPT_PCM,           PicoIn.opt, POPT_EN_MCD_PCM, h_cdpcm),
-	mee_onoff_h("SaveRAM cart",         MA_CDOPT_SAVERAM,       PicoIn.opt, POPT_EN_MCD_RAMCART, h_srcart),
-	mee_onoff_h("Scale/Rot. fx",        MA_CDOPT_SCALEROT_CHIP, PicoIn.opt, POPT_EN_MCD_GFX, h_scfx),
+	mee_onoff_h("CDDA audio",           MA_CDOPT_CDDA,          PicoOpt, POPT_EN_MCD_CDDA, h_cdda),
+	mee_onoff_h("PCM audio",            MA_CDOPT_PCM,           PicoOpt, POPT_EN_MCD_PCM, h_cdpcm),
+	mee_onoff_h("SaveRAM cart",         MA_CDOPT_SAVERAM,       PicoOpt, POPT_EN_MCD_RAMCART, h_srcart),
+	mee_onoff_h("Scale/Rot. fx",        MA_CDOPT_SCALEROT_CHIP, PicoOpt, POPT_EN_MCD_GFX, h_scfx),
+	mee_onoff_h("Accurate sync for CPUs",        MA_CDOPT_ACCURATE_SYNC_CPUS, PicoOpt, POPT_EN_ACCURATE_SYNC_CPUS, h_bsync),
 	mee_end,
 };
 
@@ -466,9 +474,9 @@ static const char h_sh2cycles[]  = "Cycles/millisecond (similar to DOSBox)\n"
 
 static menu_entry e_menu_32x_options[] =
 {
-	mee_onoff_h   ("32X enabled",       MA_32XOPT_ENABLE_32X,  PicoIn.opt, POPT_EN_32X, h_32x_enable),
+	mee_onoff_h   ("32X enabled",       MA_32XOPT_ENABLE_32X,  PicoOpt, POPT_EN_32X, h_32x_enable),
 	mee_enum      ("32X renderer",      MA_32XOPT_RENDERER,    currentConfig.renderer32x, renderer_names32x),
-	mee_onoff_h   ("PWM sound",         MA_32XOPT_PWM,         PicoIn.opt, POPT_EN_PWM, h_pwm),
+	mee_onoff_h   ("PWM sound",         MA_32XOPT_PWM,         PicoOpt, POPT_EN_PWM, h_pwm),
 	mee_cust_h    ("Master SH2 cycles", MA_32XOPT_MSH2_CYCLES, mh_opt_sh2cycles, mgn_opt_sh2cycles, h_sh2cycles),
 	mee_cust_h    ("Slave SH2 cycles",  MA_32XOPT_SSH2_CYCLES, mh_opt_sh2cycles, mgn_opt_sh2cycles, h_sh2cycles),
 	mee_end,
@@ -490,21 +498,55 @@ static int menu_loop_32x_options(int id, int keys)
 
 // ------------ adv options menu ------------
 
-static const char h_ovrclk[] = "Will break some games, keep at 0";
+// convert from multiplier of VClk
+static int mh_opt_svpcycles(int id, int keys)
+{
+	//int *khz = &PicoSVPCycles;
+	int *khz = &currentConfig.svp_khz;
+
+	if (keys & (PBTN_LEFT|PBTN_RIGHT))
+		*khz += (keys & PBTN_LEFT) ? -50 : 50;
+	if (keys & (PBTN_L|PBTN_R))
+		*khz += (keys & PBTN_L) ? -500 : 500;
+
+	if (*khz < 1)
+		*khz = 1;
+	else if (*khz > 0x7fffffff / 1000)
+		*khz = 0x7fffffff / 1000;
+
+	//currentConfig.svp_khz = PicoSVPCycles;
+	PicoSVPCycles = currentConfig.svp_khz;
+
+	return 0;
+}
+
+static const char *mgn_opt_svpcycles(int id, int *offs)
+{
+	//int khz = PicoSVPCycles;
+	int khz = currentConfig.svp_khz;
+
+	sprintf(static_buff, "%d", khz);
+	return static_buff;
+}
+
+static const char h_svpcycles[]  = "Cycles/millisecond (similar to DOSBox)\n"
+				   "lower values speed up emulation but break games\n"
+				   "at least 18000 recommended for clock sync";
 
 static menu_entry e_menu_adv_options[] =
 {
 	mee_onoff     ("SRAM/BRAM saves",          MA_OPT_SRAM_STATES,    currentConfig.EmuOpt, EOPT_EN_SRAM),
-	mee_onoff     ("Disable sprite limit",     MA_OPT2_NO_SPRITE_LIM, PicoIn.opt, POPT_DIS_SPRITE_LIM),
-	mee_range_h   ("Overclock M68k (%)",       MA_OPT2_OVERCLOCK_M68K,currentConfig.overclock_68k, 0, 1000, h_ovrclk),
-	mee_onoff     ("Emulate Z80",              MA_OPT2_ENABLE_Z80,    PicoIn.opt, POPT_EN_Z80),
-	mee_onoff     ("Emulate YM2612 (FM)",      MA_OPT2_ENABLE_YM2612, PicoIn.opt, POPT_EN_FM),
-	mee_onoff     ("Emulate SN76496 (PSG)",    MA_OPT2_ENABLE_SN76496,PicoIn.opt, POPT_EN_PSG),
+	mee_onoff     ("Disable sprite limit",     MA_OPT2_NO_SPRITE_LIM, PicoOpt, POPT_DIS_SPRITE_LIM),
+	mee_onoff     ("Emulate Z80",              MA_OPT2_ENABLE_Z80,    PicoOpt, POPT_EN_Z80),
+	mee_onoff     ("Emulate YM2612 (FM)",      MA_OPT2_ENABLE_YM2612, PicoOpt, POPT_EN_FM),
+	mee_onoff     ("Emulate SN76496 (PSG)",    MA_OPT2_ENABLE_SN76496,PicoOpt, POPT_EN_PSG),
+	mee_onoff     ("Keep sound when it slowdown",    MA_OPT2_ENABLE_KEEP_SOUND,currentConfig.EmuOpt, EOPT_EN_KEEP_SOUND),
 	mee_onoff     ("gzip savestates",          MA_OPT2_GZIP_STATES,   currentConfig.EmuOpt, EOPT_GZIP_SAVES),
 	mee_onoff     ("Don't save last used ROM", MA_OPT2_NO_LAST_ROM,   currentConfig.EmuOpt, EOPT_NO_AUTOSVCFG),
-	mee_onoff     ("Disable idle loop patching",MA_OPT2_NO_IDLE_LOOPS,PicoIn.opt, POPT_DIS_IDLE_DET),
+	mee_onoff     ("Disable idle loop patching",MA_OPT2_NO_IDLE_LOOPS,PicoOpt, POPT_DIS_IDLE_DET),
 	mee_onoff     ("Disable frame limiter",    MA_OPT2_NO_FRAME_LIMIT,currentConfig.EmuOpt, EOPT_NO_FRMLIMIT),
-	mee_onoff     ("Enable dynarecs",          MA_OPT2_DYNARECS,      PicoIn.opt, POPT_EN_DRC),
+	mee_onoff     ("Enable dynarecs",          MA_OPT2_DYNARECS,      PicoOpt, POPT_EN_DRC),
+	mee_cust_h    ("SVP cycles", 			   MA_OPT2_SVP_CYCLES,    mh_opt_svpcycles, mgn_opt_svpcycles, h_svpcycles),
 	mee_onoff     ("Status line in main menu", MA_OPT2_STATUS_LINE,   currentConfig.EmuOpt, EOPT_SHOW_RTC),
 	MENU_OPTIONS_ADV
 	mee_end,
@@ -513,20 +555,121 @@ static menu_entry e_menu_adv_options[] =
 static int menu_loop_adv_options(int id, int keys)
 {
 	static int sel = 0;
-
 	me_loop(e_menu_adv_options, &sel);
-	PicoIn.overclockM68k = currentConfig.overclock_68k; // int vs short
-
 	return 0;
 }
 
 // ------------ gfx options menu ------------
 
+int vsync_opt;
+
+static int mh_set_scale_unscaled_centered(int id, int keys)
+{
+	plat_set_scale_unscaled_centered();
+	return 1;
+}
+
+static int mh_set_scale_4_3(int id, int keys)
+{
+	plat_set_scale_4_3();
+	return 1;
+}
+
+static int mh_set_scale_fullscreen(int id, int keys)
+{
+	plat_set_scale_fullscreen();
+	return 1;
+}
+
+static int mh_set_scale_fullscreen_zoomed(int id, int keys)
+{
+	plat_set_scale_fullscreen_zoomed();
+	return 1;
+}
+
+static int mh_set_scale_cut_borders(int id, int keys)
+{
+	plat_set_scale_cut_borders();
+	return 1;
+}
+
+static const char *mgn_opt_vsync(int id, int *offs)
+{
+	const char *val = "never";
+	if (currentConfig.EmuOpt & 0x2000)
+		val = (currentConfig.EmuOpt & 0x10000) ? "sometimes" : "always";
+	sprintf(static_buff, "%s", val);
+	return static_buff;
+}
+
+static int mh_opt_vsync(int id, int keys) {
+
+	if(keys & PBTN_RIGHT) {
+		if( !( currentConfig.EmuOpt & EOPT_VSYNC ) && !( currentConfig.EmuOpt & EOPT_VSYNC_MODE ) ) {  // never
+			currentConfig.EmuOpt |= (EOPT_VSYNC|EOPT_VSYNC_MODE);          // sometimes
+		}
+
+		else if( ( currentConfig.EmuOpt & EOPT_VSYNC ) && ( ( currentConfig.EmuOpt & EOPT_VSYNC_MODE ) ) ) {  // sometimes
+			currentConfig.EmuOpt &= ~EOPT_VSYNC_MODE;         // always
+		}
+	}
+
+	else {
+		if( ( currentConfig.EmuOpt & EOPT_VSYNC ) && ( ( currentConfig.EmuOpt & EOPT_VSYNC_MODE ) ) ) {  // sometimes
+			currentConfig.EmuOpt &= ~(EOPT_VSYNC|EOPT_VSYNC_MODE);    // never
+		}
+
+		else if( ( currentConfig.EmuOpt & EOPT_VSYNC ) && ( !( currentConfig.EmuOpt & EOPT_VSYNC_MODE ) ) ) {  // always
+			currentConfig.EmuOpt |= (EOPT_VSYNC|EOPT_VSYNC_MODE);          // sometimes
+		}
+	}
+	return 0;
+}
+
+#ifndef PSP
 static const char h_gamma[] = "Gamma/brightness adjustment (default 1.00)";
 
 static const char *mgn_aopt_gamma(int id, int *offs)
 {
 	sprintf(static_buff, "%i.%02i", currentConfig.gamma / 100, currentConfig.gamma % 100);
+	return static_buff;
+}
+#else
+static const char h_gamma[] = "Gamma/brightness adjustment (default 0)";
+
+static const char *mgn_aopt_gamma(int id, int *offs)
+{
+	sprintf(static_buff, "%2i", currentConfig.gamma);
+	return static_buff;
+}
+#endif
+
+static const char h_gamma2[] = "Black level adjustment (default 0)";
+
+static const char *mgn_aopt_gamma2(int id, int *offs)
+{
+	sprintf(static_buff, "%i", currentConfig.gamma2);
+	return static_buff;
+}
+
+static const char *mgn_aopt_scale(int id, int *offs)
+{
+	sprintf(static_buff, "%i.%02i", ((int)currentConfig.scale_int) / 100, ((int)currentConfig.scale_int) % 100);
+	currentConfig.scale = (float)currentConfig.scale_int / 100.0f;
+	return static_buff;
+}
+
+static const char *mgn_aopt_hscale32(int id, int *offs)
+{
+	sprintf(static_buff, "%i.%02i", ((int)currentConfig.hscale32_int) / 100, ((int)currentConfig.hscale32_int) % 100);
+	currentConfig.hscale32 = (float)currentConfig.hscale32_int / 100.0f;
+	return static_buff;
+}
+
+static const char *mgn_aopt_hscale40(int id, int *offs)
+{
+	sprintf(static_buff, "%i.%02i", ((int)currentConfig.hscale40_int) / 100, ((int)currentConfig.hscale40_int) % 100);
+	currentConfig.hscale40 = (float)currentConfig.hscale40_int / 100.0f;
 	return static_buff;
 }
 
@@ -535,7 +678,21 @@ static menu_entry e_menu_gfx_options[] =
 	mee_enum   ("Video output mode", MA_OPT_VOUT_MODE, plat_target.vout_method, men_dummy),
 	mee_enum   ("Renderer",          MA_OPT_RENDERER, currentConfig.renderer, renderer_names),
 	mee_enum   ("Filter",            MA_OPT3_FILTERING, currentConfig.filter, men_dummy),
+	mee_cust   ("Wait for vsync",    MA_OPT3_VSYNC, mh_opt_vsync, mgn_opt_vsync),
+#ifndef PSP
 	mee_range_cust_h("Gamma correction", MA_OPT2_GAMMA, currentConfig.gamma, 1, 300, mgn_aopt_gamma, h_gamma),
+#else
+	mee_range_cust_h("Gamma correction", MA_OPT2_GAMMA, currentConfig.gamma, -4, 16, mgn_aopt_gamma, h_gamma),
+	mee_range_cust_h("Black level", MA_OPT2_GAMMA2, currentConfig.gamma2, 0, 2, mgn_aopt_gamma2, h_gamma2),
+#endif
+	mee_range_cust_h("Scale factor", MA_OPT3_SCALE, currentConfig.scale_int, 50, 200, mgn_aopt_scale, ""),
+	mee_range_cust_h("Hor. scale (for low res. games)", MA_OPT3_HSCALE32, currentConfig.hscale32_int, 50, 200, mgn_aopt_hscale32, ""),
+	mee_range_cust_h("Hor. scale (for hi res. games)", MA_OPT3_HSCALE40, currentConfig.hscale40_int, 50, 200, mgn_aopt_hscale40, ""),
+	mee_handler   ("Set to unscaled centered",         mh_set_scale_unscaled_centered),
+	mee_handler   ("Set to 4:3 scaled",         mh_set_scale_4_3),
+	mee_handler   ("Set to fullscreen",         mh_set_scale_fullscreen),
+	mee_handler   ("Set to cut horizontal borders",         mh_set_scale_cut_borders),
+	mee_handler   ("Set to fullscreen (zoomed)",         mh_set_scale_fullscreen_zoomed),
 	MENU_OPTIONS_GFX
 	mee_end,
 };
@@ -564,15 +721,15 @@ static int sndrate_prevnext(int rate, int dir)
 
 	i += dir ? 1 : -1;
 	if (i > 4) {
-		if (!(PicoIn.opt & POPT_EN_STEREO)) {
-			PicoIn.opt |= POPT_EN_STEREO;
+		if (!(PicoOpt & POPT_EN_STEREO)) {
+			PicoOpt |= POPT_EN_STEREO;
 			return rates[0];
 		}
 		return rates[4];
 	}
 	if (i < 0) {
-		if (PicoIn.opt & POPT_EN_STEREO) {
-			PicoIn.opt &= ~POPT_EN_STEREO;
+		if (PicoOpt & POPT_EN_STEREO) {
+			PicoOpt &= ~POPT_EN_STEREO;
 			return rates[4];
 		}
 		return rates[0];
@@ -587,24 +744,24 @@ static void region_prevnext(int right)
 	int i;
 
 	if (right) {
-		if (!PicoIn.regionOverride) {
+		if (!PicoRegionOverride) {
 			for (i = 0; i < 6; i++)
-				if (rgn_orders[i] == PicoIn.autoRgnOrder) break;
-			if (i < 5) PicoIn.autoRgnOrder = rgn_orders[i+1];
-			else PicoIn.regionOverride=1;
+				if (rgn_orders[i] == PicoAutoRgnOrder) break;
+			if (i < 5) PicoAutoRgnOrder = rgn_orders[i+1];
+			else PicoRegionOverride=1;
 		}
 		else
-			PicoIn.regionOverride <<= 1;
-		if (PicoIn.regionOverride > 8)
-			PicoIn.regionOverride = 8;
+			PicoRegionOverride <<= 1;
+		if (PicoRegionOverride > 8)
+			PicoRegionOverride = 8;
 	} else {
-		if (!PicoIn.regionOverride) {
+		if (!PicoRegionOverride) {
 			for (i = 0; i < 6; i++)
-				if (rgn_orders[i] == PicoIn.autoRgnOrder) break;
-			if (i > 0) PicoIn.autoRgnOrder = rgn_orders[i-1];
+				if (rgn_orders[i] == PicoAutoRgnOrder) break;
+			if (i > 0) PicoAutoRgnOrder = rgn_orders[i-1];
 		}
 		else
-			PicoIn.regionOverride >>= 1;
+			PicoRegionOverride >>= 1;
 	}
 }
 
@@ -612,7 +769,7 @@ static int mh_opt_misc(int id, int keys)
 {
 	switch (id) {
 	case MA_OPT_SOUND_QUALITY:
-		PicoIn.sndRate = sndrate_prevnext(PicoIn.sndRate, keys & PBTN_RIGHT);
+		PsndRate = sndrate_prevnext(PsndRate, keys & PBTN_RIGHT);
 		break;
 	case MA_OPT_REGION:
 		region_prevnext(keys & PBTN_RIGHT);
@@ -675,8 +832,8 @@ static const char *mgn_opt_sound(int id, int *offs)
 {
 	const char *str2;
 	*offs = -8;
-	str2 = (PicoIn.opt & POPT_EN_STEREO) ? "stereo" : "mono";
-	sprintf(static_buff, "%5iHz %s", PicoIn.sndRate, str2);
+	str2 = (PicoOpt & POPT_EN_STEREO) ? "stereo" : "mono";
+	sprintf(static_buff, "%5iHz %s", PsndRate, str2);
 	return static_buff;
 }
 
@@ -684,7 +841,7 @@ static const char *mgn_opt_region(int id, int *offs)
 {
 	static const char *names[] = { "Auto", "      Japan NTSC", "      Japan PAL", "      USA", "      Europe" };
 	static const char *names_short[] = { "", " JP", " JP", " US", " EU" };
-	int code = PicoIn.regionOverride;
+	int code = PicoRegionOverride;
 	int u, i = 0;
 
 	*offs = -6;
@@ -697,7 +854,7 @@ static const char *mgn_opt_region(int id, int *offs)
 	} else {
 		strcpy(static_buff, "Auto:");
 		for (u = 0; u < 3; u++) {
-			code = (PicoIn.autoRgnOrder >> u*4) & 0xf;
+			code = (PicoAutoRgnOrder >> u*4) & 0xf;
 			for (i = 0; code; code >>= 1, i++)
 				;
 			strcat(static_buff, names_short[i]);
@@ -818,8 +975,10 @@ static void draw_frame_debug(void)
 	if (!(pv->debug_p & PVD_KILL_S_HI)) memcpy(layer_str + 19, "spr_hi", 6);
 	if (!(pv->debug_p & PVD_KILL_32X))  memcpy(layer_str + 26, "32x", 4);
 
+	int renderer_old = currentConfig.renderer;
 	pemu_forced_frame(1, 0);
 	make_bg(1);
+	currentConfig.renderer = renderer_old;
 
 	smalltext_out16(4, 1, "build: r" REVISION "  "__DATE__ " " __TIME__ " " COMPILER, 0xffff);
 	smalltext_out16(4, g_menuscreen_h - me_sfont_h, layer_str, 0xffff);
@@ -831,6 +990,7 @@ static void debug_menu_loop(void)
 	int inp, mode = 0;
 	int spr_offs = 0, dumped = 0;
 	char *tmp;
+	int renderer_old;
 
 	while (1)
 	{
@@ -848,17 +1008,17 @@ static void debug_menu_loop(void)
 				break;
 			case 1: draw_frame_debug();
 				break;
-			case 2: pemu_forced_frame(1, 0);
+			case 2: renderer_old = currentConfig.renderer;
+				pemu_forced_frame(1, 0);
 				make_bg(1);
-				PDebugShowSpriteStats((unsigned short *)g_menuscreen_ptr
-					+ (g_menuscreen_h/2 - 240/2) * g_menuscreen_pp
-					+ g_menuscreen_w/2 - 320/2, g_menuscreen_pp);
+				currentConfig.renderer = renderer_old;
+				PDebugShowSpriteStats((unsigned short *)g_menuscreen_ptr + (g_menuscreen_h/2 - 240/2)*g_menuscreen_w +
+					g_menuscreen_w/2 - 320/2, g_menuscreen_w);
 				break;
-			case 3: menuscreen_memset_lines(g_menuscreen_ptr, 0, g_menuscreen_h);
-				PDebugShowPalette(g_menuscreen_ptr, g_menuscreen_pp);
-				PDebugShowSprite((unsigned short *)g_menuscreen_ptr
-					+ g_menuscreen_pp * 120 + g_menuscreen_w / 2 + 16,
-					g_menuscreen_pp, spr_offs);
+			case 3: memset(g_menuscreen_ptr, 0, g_menuscreen_w * g_menuscreen_h * 2);
+				PDebugShowPalette(g_menuscreen_ptr, g_menuscreen_w);
+				PDebugShowSprite((unsigned short *)g_menuscreen_ptr + g_menuscreen_w*120 + g_menuscreen_w/2 + 16,
+					g_menuscreen_w, spr_offs);
 				draw_text_debug(PDebugSpriteList(), spr_offs, 6);
 				break;
 			case 4: tmp = PDebug32x();
@@ -896,10 +1056,10 @@ static void debug_menu_loop(void)
 				if (inp & PBTN_UP)    pv->debug_p ^= PVD_KILL_S_HI;
 				if (inp & PBTN_MA2)   pv->debug_p ^= PVD_KILL_32X;
 				if (inp & PBTN_MOK) {
-					PicoIn.sndOut = NULL; // just in case
-					PicoIn.skipFrame = 1;
+					PsndOut = NULL; // just in case
+					PicoSkipFrame = 1;
 					PicoFrame();
-					PicoIn.skipFrame = 0;
+					PicoSkipFrame = 0;
 					while (inp & PBTN_MOK) inp = in_menu_wait_any(NULL, -1);
 				}
 				break;
@@ -920,7 +1080,7 @@ static void draw_frame_credits(void)
 }
 
 static const char credits[] =
-	"PicoDrive v" VERSION " (c) notaz, 2006-2013\n\n\n"
+	"PicoDrive v" VERSION " (c) notaz, 2006-2017\n\n\n"
 	"Credits:\n"
 	"fDave: initial code\n"
 #ifdef EMU_C68K
@@ -936,6 +1096,10 @@ static const char credits[] =
 	"MAME devs: SH2, YM2612 and SN76496 cores\n"
 	"Eke, Stef: some Sega CD code\n"
 	"Inder, ketchupgun: graphics\n"
+#ifdef PSP
+	"Robson Santana: PSP port\n"
+	"                PSP SVP dynarec\n"
+#endif
 #ifdef __GP2X__
 	"Squidge: mmuhack\n"
 	"Dzz: ARM940 sample\n"
@@ -947,6 +1111,10 @@ static const char credits[] =
 	" Lordus, Exophase, Rokas,\n"
 	" Eke, Nemesis, Tasco Deluxe";
 
+#ifdef PSP
+#include <psprtc.h>
+#endif
+
 static void menu_main_draw_status(void)
 {
 	static time_t last_bat_read = 0;
@@ -955,51 +1123,92 @@ static void menu_main_draw_status(void)
 	int bat_h = me_mfont_h * 2 / 3;
 	int i, u, w, wfill, batt_val;
 	struct tm *tmp;
+#ifndef PSP
 	time_t ltime;
+#else
+	static long last_bat_read_hour = 0;
+	static long last_bat_read_minutes = 0;
+	pspTime time;
+	int ret;
+#endif
 	char time_s[16];
 
 	if (!(currentConfig.EmuOpt & EOPT_SHOW_RTC))
 		return;
 
+#ifdef PSP
+	g_screen_width = 480;
+#endif
+
+#ifndef PSP
 	ltime = time(NULL);
 	tmp = gmtime(&ltime);
 	strftime(time_s, sizeof(time_s), "%H:%M", tmp);
+#else
+	ret = sceRtcGetCurrentClockLocalTime(&time);
+
+	if( ret >= 0 ) {
+		snprintf(time_s, sizeof(time_s), "%02i:%02i", time.hour, time.minutes);
+	}
+#endif
 
 	text_out16(g_screen_width - me_mfont_w * 6, me_mfont_h + 2, time_s);
 
+#ifndef PSP
 	if (ltime - last_bat_read > 10) {
 		last_bat_read = ltime;
 		last_bat_val = batt_val = plat_target_bat_capacity_get();
 	}
 	else
 		batt_val = last_bat_val;
+#else
+	if (((time.hour*60)+time.minutes) - ((last_bat_read_hour*60)+last_bat_read_minutes) > 10) {
+		last_bat_read_hour = (long) time.hour;
+		last_bat_read_minutes = (long) time.minutes;
+		last_bat_val = batt_val = plat_target_bat_capacity_get();
+	}
+	else
+		batt_val = last_bat_val;
+#endif
+
+
+#ifdef PSP
+	g_screen_width = 512;
+#endif
 
 	if (batt_val < 0 || batt_val > 100)
 		return;
 
 	/* battery info */
-	bp += (me_mfont_h * 2 + 2) * g_screen_ppitch + g_screen_width - me_mfont_w * 3 - 3;
+#ifndef PSP
+	bp += (me_mfont_h * 2 + 2) * g_screen_width + g_screen_width - me_mfont_w * 3 - 3;
+#else
+	bp += (me_mfont_h * 2 + 2) * g_screen_width + 480 - me_mfont_w * 3 - 3;
+#endif
 	for (i = 0; i < me_mfont_w * 2; i++)
 		bp[i] = menu_text_color;
 	for (i = 0; i < me_mfont_w * 2; i++)
-		bp[i + g_screen_ppitch * bat_h] = menu_text_color;
+		bp[i + g_screen_width * bat_h] = menu_text_color;
 	for (i = 0; i <= bat_h; i++)
-		bp[i * g_screen_ppitch] =
-		bp[i * g_screen_ppitch + me_mfont_w * 2] = menu_text_color;
+		bp[i * g_screen_width] =
+		bp[i * g_screen_width + me_mfont_w * 2] = menu_text_color;
 	for (i = 2; i < bat_h - 1; i++)
-		bp[i * g_screen_ppitch - 1] =
-		bp[i * g_screen_ppitch - 2] = menu_text_color;
+		bp[i * g_screen_width - 1] =
+		bp[i * g_screen_width - 2] = menu_text_color;
 
 	w = me_mfont_w * 2 - 1;
 	wfill = batt_val * w / 100;
 	for (u = 1; u < bat_h; u++)
 		for (i = 0; i < wfill; i++)
-			bp[(w - i) + g_screen_ppitch * u] = menu_text_color;
+			bp[(w - i) + g_screen_width * u] = menu_text_color;
 }
 
 static int main_menu_handler(int id, int keys)
 {
 	const char *ret_name;
+#ifdef PSP
+	FILE *tstf;
+#endif
 
 	switch (id)
 	{
@@ -1023,17 +1232,26 @@ static int main_menu_handler(int id, int keys)
 		break;
 	case MA_MAIN_LOAD_ROM:
 		rom_fname_reload = NULL;
+#ifdef PSP
+		if ( tstf = fopen(rom_fname_loaded, "rb") )
+			fclose(tstf);
+		else
+			getcwd(rom_fname_loaded, PATH_MAX);
+#endif
 		ret_name = menu_loop_romsel(rom_fname_loaded,
 			sizeof(rom_fname_loaded), rom_exts, NULL);
 		if (ret_name != NULL) {
 			lprintf("selected file: %s\n", ret_name);
 			rom_fname_reload = ret_name;
+#ifdef PSP
+			strcpy(rom_fname_loaded,rom_fname_reload);
+#endif
 			engineState = PGS_ReloadRom;
 			return 1;
 		}
 		break;
 	case MA_MAIN_CHANGE_CD:
-		if (PicoIn.AHW & PAHW_MCD) {
+		if (PicoAHW & PAHW_MCD) {
 			// if cd is loaded, cdd_unload() triggers eject and
 			// returns 1, else we'll select and load new CD here
 			if (!cdd_unload())
@@ -1074,8 +1292,8 @@ static menu_entry e_menu_main[] =
 	mee_handler_id("Load State",         MA_MAIN_LOAD_STATE,  main_menu_handler),
 	mee_handler_id("Reset game",         MA_MAIN_RESET_GAME,  main_menu_handler),
 	mee_handler_id("Load new ROM/ISO",   MA_MAIN_LOAD_ROM,    main_menu_handler),
-	mee_handler_id("Change CD/ISO",      MA_MAIN_CHANGE_CD,   main_menu_handler),
 	mee_handler   ("Change options",                          menu_loop_options),
+	mee_handler_id("Change CD/ISO",      MA_MAIN_CHANGE_CD,   main_menu_handler),
 	mee_handler   ("Configure controls",                      menu_loop_keyconfig),
 	mee_handler_id("Credits",            MA_MAIN_CREDITS,     main_menu_handler),
 	mee_handler_id("Patches / GameGenie",MA_MAIN_PATCHES,     main_menu_handler),
@@ -1091,7 +1309,7 @@ void menu_loop(void)
 	me_enable(e_menu_main, MA_MAIN_SAVE_STATE,  PicoGameLoaded);
 	me_enable(e_menu_main, MA_MAIN_LOAD_STATE,  PicoGameLoaded);
 	me_enable(e_menu_main, MA_MAIN_RESET_GAME,  PicoGameLoaded);
-	me_enable(e_menu_main, MA_MAIN_CHANGE_CD,   PicoIn.AHW & PAHW_MCD);
+	me_enable(e_menu_main, MA_MAIN_CHANGE_CD,   PicoAHW & PAHW_MCD);
 	me_enable(e_menu_main, MA_MAIN_PATCHES, PicoPatches != NULL);
 
 	menu_enter(PicoGameLoaded);
@@ -1178,7 +1396,7 @@ void menu_update_msg(const char *msg)
 /* hidden options for config engine only */
 static menu_entry e_menu_hidden[] =
 {
-	mee_onoff("Accurate sprites", MA_OPT_ACC_SPRITES, PicoIn.opt, 0x080),
+	mee_onoff("Accurate sprites", MA_OPT_ACC_SPRITES, PicoOpt, 0x080),
 	mee_onoff("autoload savestates", MA_OPT_AUTOLOAD_SAVE, g_autostateld_opt, 1),
 	mee_end,
 };
@@ -1247,8 +1465,10 @@ void menu_init(void)
 	me_enable(e_menu_gfx_options, MA_OPT3_FILTERING,
 		plat_target.hwfilters != NULL);
 
+#ifndef PSP
 	me_enable(e_menu_gfx_options, MA_OPT2_GAMMA,
                 plat_target.gamma_set != NULL);
+#endif
 
 	i = me_id2offset(e_menu_options, MA_OPT_CPU_CLOCKS);
 	e_menu_options[i].enabled = 0;
